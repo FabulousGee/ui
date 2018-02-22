@@ -16,7 +16,7 @@ class App
 
     // @var array|false Location where to load JS/CSS files
     public $cdn = [
-        'atk'              => 'https://cdn.rawgit.com/atk4/ui/1.3.1/public',
+        'atk'              => 'https://cdn.rawgit.com/atk4/ui/1.4.2/public',
         'jquery'           => 'https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1',
         'serialize-object' => 'https://cdnjs.cloudflare.com/ajax/libs/jquery-serialize-object/2.5.0',
         'semantic-ui'      => 'https://cdnjs.cloudflare.com/ajax/libs/semantic-ui/2.2.10',
@@ -24,7 +24,7 @@ class App
     ];
 
     // @var string Version of Agile UI
-    public $version = '1.3.1';
+    public $version = '1.4.2';
 
     // @var string Name of application
     public $title = 'Agile UI - Untitled Application';
@@ -44,6 +44,11 @@ class App
      * @var bool
      */
     public $catch_exceptions = true;
+
+    /**
+     * Will display error if callback wasn't triggered.
+     */
+    public $catch_runaway_callbacks = true;
 
     /**
      * Will always run application even if developer didn't explicitly executed run();.
@@ -77,8 +82,15 @@ class App
     // @var Persistence\UI
     public $ui_persistence = null;
 
-    /** @var View For internal use */
+    /**
+     * @var View For internal use
+     */
     public $html = null;
+
+    /**
+     * @var LoggerInterface, target for objects with DebugTrait
+     */
+    public $logger = null;
 
     /**
      * Constructor.
@@ -116,7 +128,7 @@ class App
          */
 
         // Set up template folder
-        $this->template_dir = dirname(dirname(__FILE__)).'/template/'.$this->skin;
+        $this->template_dir = __DIR__.'/../template/'.$this->skin;
 
         // Set our exception handler
         if ($this->catch_exceptions) {
@@ -172,7 +184,10 @@ class App
      */
     public function caughtException($exception)
     {
+        $this->catch_runaway_callbacks = false;
+
         $l = new \atk4\ui\App();
+        $l->catch_runaway_callbacks = false;
         $l->initLayout('Centered');
         if ($exception instanceof \atk4\core\Exception) {
             $l->layout->template->setHTML('Content', $exception->getHTML());
@@ -208,7 +223,9 @@ class App
      */
     public function terminate($output = null)
     {
-        echo $output;
+        if ($output !== null) {
+            echo $output;
+        }
         $this->run_called = true; // prevent shutdown function from triggering.
         exit;
     }
@@ -270,7 +287,7 @@ class App
 
         // Agile UI
         $url = isset($this->cdn['atk']) ? $this->cdn['atk'] : '../public';
-        $this->requireJS($url.'/atk4JS.min.js');
+        $this->requireJS($url.'/atkjs-ui.min.js');
         $this->requireJS($url.'/agileui.js');
         $this->requireCSS($url.'/agileui.css');
     }
@@ -336,6 +353,11 @@ class App
         $this->html->template->appendHTML('HEAD', $this->html->getJS());
         $this->is_rendering = false;
         $this->hook('beforeOutput');
+
+        if (isset($_GET['__atk_callback']) && $this->catch_runaway_callbacks) {
+            $this->terminate('!! Callback requested, but never reached. You may be missing some arguments in '.$_SERVER['REQUEST_URI']);
+        }
+
         echo $this->html->template->render();
     }
 
@@ -367,6 +389,13 @@ class App
         return $template;
     }
 
+    public $db = null;
+
+    public function dbConnect($dsn, $user = null, $password = null, $args = [])
+    {
+        return $this->db = $this->add(\atk4\data\Persistence::connect($dsn, $user, $password, $args));
+    }
+
     protected function getRequestURI()
     {
         if (isset($_SERVER['HTTP_X_REWRITE_URL'])) { // IIS
@@ -375,7 +404,7 @@ class App
             $request_uri = $_SERVER['REQUEST_URI'];
         } elseif (isset($_SERVER['ORIG_PATH_INFO'])) { // IIS 5.0, PHP as CGI
             $request_uri = $_SERVER['ORIG_PATH_INFO'];
-            // This one comes without QUERY string
+        // This one comes without QUERY string
         } else {
             $request_uri = '';
         }
@@ -391,20 +420,27 @@ class App
      *
      * @param array|string $page           URL as string or array with page name as first element and other GET arguments
      * @param bool         $needRequestUri Simply return $_SERVER['REQUEST_URI'] if needed
+     * @param array        $extra_args     Additional URL arguments
      *
      * @return string
      */
-    public function url($page = [], $needRequestUri = false)
+    public function url($page = [], $needRequestUri = false, $extra_args = [])
     {
         if ($needRequestUri) {
             return $_SERVER['REQUEST_URI'];
         }
 
         $sticky = $this->sticky_get_arguments;
-        $result = [];
+        $result = $extra_args;
 
         if ($this->page === null) {
-            $this->page = basename($this->getRequestURI(), '.php');
+            $uri = $this->getRequestURI();
+
+            if (substr($uri, -1, 1) == '/') {
+                $this->page = 'index';
+            } else {
+                $this->page = basename($uri, '.php');
+            }
         }
 
         // if page passed as string, then simply use it
@@ -507,6 +543,25 @@ class App
         $this->html->template->appendHTML('HEAD', $this->getTag('link/', ['rel' => 'stylesheet', 'type' => 'text/css', 'href' => $url])."\n");
 
         return $this;
+    }
+
+    /**
+     * A convenient wrapper for sending user to another page.
+     */
+    public function redirect($page)
+    {
+        header('Location: '.$this->url($page));
+
+        $this->run_called = true; // prevent shutdown function from triggering.
+        exit;
+    }
+
+    /**
+     * Generate action for redirecting user to another page.
+     */
+    public function jsRedirect($page)
+    {
+        return new jsExpression('document.location = []', [$this->url($page)]);
     }
 
     /**

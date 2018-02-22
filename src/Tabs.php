@@ -44,13 +44,13 @@ class Tabs extends View
             if (is_callable($action)) {
                 // if there is callback action, then use VirtualPage
                 $vp = $sub->add('VirtualPage');
-                $item->setPath($vp->getUrl());
+                $item->setPath($vp->getUrl('cut'));
 
                 $vp->set($action);
             } else {
                 // otherwise treat it as URL
                 //# TODO: refactor this ugly hack
-                $item->setPath(str_replace('.php.', '.', $this->app->url($action)).'#');
+                $item->setPath(str_replace('.php.', '.', $this->url($action)).'#');
             }
         }
 

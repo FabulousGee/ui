@@ -54,6 +54,10 @@ through a GET argument, then VirtualPage will change it's rendering technique. L
 This code will only show the link containing a URL, but will not show LoremIpsum text.  If you do follow the link, you'll
 see only the 'LoremIpsum' text. 
 
+.. php:attr:: $urlTrigger
+
+See :php:attr:`Callback::urlTrigger`.
+
 
 Output Modes
 ^^^^^^^^^^^^
@@ -92,39 +96,12 @@ This code will perform identically as the previous example, however 'LoremIpsum'
 unless you are requesting VirtualPage specifically, saving some CPU time. Capability of defining callback
 also makes it possible for VirtualPage to be embedded into any :ref:`component` quite reliably.
 
-To illustrate, how :php:class:`Tabs` component rely on VirtualPage, the following code::
+To illustrate, see how :php:class:`Tabs` component rely on VirtualPage, the following code::
 
     $t = $layout->add('Tabs');
 
     $t->addTab('Tab1')->add('LoremIpsum'); // regular tab
     $t->addTab('Tab2', function($p){ $p->add('LoremIpsum'); }); // dynamic tab
-
-uses the following implementation of addTab()::
-
-    public function addTab($name = null, $action = null)
-    {
-        // add tabs menu item
-        $item = $this->add([$item, 'class'=>['item']], 'Menu');
-        $item->setElement('a');
-        $item->setAttr('data-tab', $item->name);
-
-        // add tabs sub-view
-        $sub = $this->add(['View', 'class'=>['ui tab']], 'Tabs');
-        $sub->setAttr('data-tab', $item->name);
-
-        // if there is callback action, then
-        if ($action && is_callable($action)) {
-            $vp = $sub->add('VirtualPage');
-            $item->setPath($vp->getUrl());
-
-            $vp->set($action);
-        }
-
-        return  $sub;
-    }
-
-You do not need to fully understand the code to notice that Dynamic Content support requires just
-few lines of extra code.
 
 .. php:method:: getURL($html_wrapping)
 

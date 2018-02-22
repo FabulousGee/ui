@@ -49,7 +49,7 @@ class View implements jsExpressionable
      *
      * @var string
      */
-    public $region = 'Content';
+    public $region = null; //'Content';
 
     /**
      * Enables UI keyword for Semantic UI indicating that this is a
@@ -197,32 +197,14 @@ class View implements jsExpressionable
     /**
      * Sets source of the View.
      *
-     * @param array $data
+     * @param array $data   Array of data
+     * @param array $fields Limit model to particular fields
      *
      * @return \atk4\data\Model
      */
-    public function setSource(array $data)
+    public function setSource(array $data, $fields = null)
     {
-        $goodData = [];
-
-        foreach ($data as $key => $value) {
-            if (!is_array($value)) {
-                $value = ['name' => $value];
-            }
-
-            if (!isset($value['id'])) {
-                $value['id'] = $key;
-            }
-            $goodData[] = $value;
-        }
-        $goodData = ['data' => $goodData];
-
-        $model = new \atk4\data\Model(
-            new \atk4\data\Persistence_Array($goodData), 'data'
-        );
-        $model->addField('name');
-
-        return $this->setModel($model);
+        $this->setModel(new \atk4\data\Model(new \atk4\data\Persistence_Static($data)), $fields);
     }
 
     /**
@@ -275,7 +257,7 @@ class View implements jsExpressionable
     /**
      * Makes view into a "<a>" element with a link.
      *
-     * @param string $url
+     * @param string|array $url
      *
      * @return $this
      */
@@ -287,7 +269,7 @@ class View implements jsExpressionable
 
             return $this;
         }
-        $this->setAttr('href', $this->app->url($url));
+        $this->setAttr('href', $this->url($url));
 
         return $this;
     }
@@ -320,9 +302,23 @@ class View implements jsExpressionable
             $this->initDefaultApp();
         }
 
-        // set up template
-        if (is_string($this->defaultTemplate) && is_null($this->template)) {
-            $this->template = $this->app->loadTemplate($this->defaultTemplate);
+        if ($this->region && !$this->template && !$this->defaultTemplate && $this->owner && $this->owner->template) {
+            $this->template = $this->owner->template->cloneRegion($this->region);
+
+            $this->owner->template->del($this->region);
+        } else {
+            // set up template
+            if (is_string($this->defaultTemplate) && is_null($this->template)) {
+                $this->template = $this->app->loadTemplate($this->defaultTemplate);
+            }
+
+            if (!$this->region) {
+                $this->region = 'Content';
+            }
+        }
+
+        if ($this->template && !isset($this->template->app) && isset($this->app)) {
+            $this->template->app = $this->app;
         }
 
         // add default objects
@@ -344,66 +340,36 @@ class View implements jsExpressionable
     }
 
     /**
-     * In addition to adding a child object, set up it's template
+     * In addition to adding a child object, sets up it's template
      * and associate it's output with the region in our template.
      *
-     * @param View|string  $object New object to add
-     * @param string|array $region (or array for full set of defaults)
+     * @param mixed  $seed   New object to add
+     * @param string $region
      *
      * @throws Exception
      *
      * @return View
      */
-    public function add($seed, $defaults = null)
+    public function add($seed, $region = null)
     {
+        if ($this->_rendered) {
+            throw new Exception('You cannot add anything into the view after it is has been rendered');
+        }
         if (!$this->app) {
-            $this->_add_later[] = [$seed, $defaults];
+            $this->_add_later[] = [$seed, $region];
 
             return $seed;
         }
 
-        if (is_array($defaults)) {
+        if (is_array($region)) {
             throw new Exception('Second argument to add must be region or null!');
         }
 
-        $region = null;
-        if (is_array($defaults) && isset($defaults['region'])) {
-            $region = $defaults['region'];
-            unset($defaults['region']);
-        } elseif (is_array($defaults) && isset($defaults[0])) {
-            $region = $defaults[0];
-            unset($defaults[0]);
-        } elseif (is_string($defaults)) {
-            $region = $defaults;
-            $defaults = null;
-        }
-
         // Create object first
-        $object = $this->factory($this->mergeSeeds($seed, ['View']), $defaults);
-
-        if ($object instanceof self && $region) {
-            $object->region = $region;
-        }
+        $object = $this->factory($this->mergeSeeds($seed, ['View']), $region ? ['region'=>$region] : null);
 
         // Will call init() of the object
         $object = $this->_add($object);
-
-        if (!$object instanceof self) {
-            return $object;
-        }
-
-        // We are adding a new view, so do a bit more
-        if (!$object->template && $object->region && $this->template) {
-            $object->template = $this->template->cloneRegion($object->region);
-        }
-
-        if ($this->template && $object->region) {
-            if (is_string($this->template)) {
-                throw new Exception(['Property $template should contain object, not a string', 'template' => $this->template]);
-            }
-
-            $this->template->del($object->region);
-        }
 
         return $object;
     }
@@ -413,7 +379,7 @@ class View implements jsExpressionable
     // {{{ Manipulating classes and view properties
 
     /**
-     * Override this method without compatibility with parrent, if you wish
+     * Override this method without compatibility with parent, if you wish
      * to set your own things your own way for your view.
      *
      * @param string|array $arg1
@@ -441,7 +407,7 @@ class View implements jsExpressionable
             ]);
         }
 
-        if (is_string($arg1)) {
+        if (is_scalar($arg1)) {
             $this->content = $arg1;
 
             return $this;
@@ -757,6 +723,10 @@ class View implements jsExpressionable
      */
     public function getHTML()
     {
+        if (isset($_GET['__atk_reload']) && $_GET['__atk_reload'] == $this->name) {
+            $this->app->terminate($this->renderJSON());
+        }
+
         $this->renderAll();
 
         return $this->template->render();
@@ -844,6 +814,18 @@ class View implements jsExpressionable
         $this->_js_actions[$when][] = $action;
 
         return $chain;
+    }
+
+    /**
+     * Returns JS for reloading View.
+     *
+     * @param array $args
+     *
+     * @return \atk4\ui\jsReload
+     */
+    public function jsReload($args = [])
+    {
+        return new jsReload($this, $args);
     }
 
     /**
@@ -945,7 +927,7 @@ class View implements jsExpressionable
             }
 
             $actions[] = $cb;
-            //$thisAction->api(['on'=>'now', 'url'=>$cb->getURL(), 'urlData'=>$urlData, 'obj'=>new jsExpression('this')]);
+        //$thisAction->api(['on'=>'now', 'url'=>$cb->getURL(), 'urlData'=>$urlData, 'obj'=>new jsExpression('this')]);
         } elseif ($action) {
             // otherwise include
             $actions[] = $action;
@@ -1020,6 +1002,83 @@ class View implements jsExpressionable
         return "<script>\n".
             (new jQuery($ready))->jsRender().
             '</script>';
+    }
+
+    // }}}
+
+    // {{{ Sticky URLs
+
+    /** @var array stickyGet arguments */
+    public $stickyArgs = [];
+
+    /** @var array Cached stickyGet arguments */
+    public $_stickyArgsCached = null;
+
+    public $_triggerBy = null;
+
+    /**
+     * Build an URL which this view can use for call-backs. It should
+     * be guaranteed that requesting returned URL would at some point call
+     * $this->init().
+     *
+     * @param array $page
+     *
+     * @return string
+     */
+    public function url($page = [])
+    {
+        return $this->app->url($page, false, array_merge($this->_getStickyArgs($this->name), $this->stickyArgs));
+    }
+
+    /**
+     * Get sticky arguments defined by the view and parents (including API).
+     *
+     * @return array
+     */
+    public function _getStickyArgs($triggerBy)
+    {
+        $this->_triggerBy = $triggerBy;
+        if ($this->_stickyArgsCached === null) {
+            if ($this->owner && $this->owner instanceof self) {
+                $this->_stickyArgsCached = array_merge($this->owner->_getStickyArgs($triggerBy), $this->stickyArgs);
+            } else {
+                $this->_stickyArgsCached = [];
+            }
+        }
+
+        return $this->_stickyArgsCached;
+    }
+
+    /**
+     * Save sticky GET argument and return it's value.
+     *
+     * @param string $name
+     *
+     * @return string
+     */
+    public function stickyGet($name)
+    {
+        if ($this->_stickyArgsCached) {
+            if (isset($this->_stickyArgsCached[$name])) {
+                return $this->_stickyArgsCached[$name]; // already cached
+            }
+
+            if (isset($_GET[$name])) {
+                return; // setting this has no effect anyway, no need to alert
+            }
+
+            throw new Exception([
+                'Unable to set stickyGet after url() has been used here or by a child',
+                'urlBy'    => $this->_triggerBy,
+                'stickyBy' => $name,
+            ]);
+        }
+
+        if (isset($_GET[$name])) {
+            $this->stickyArgs[$name] = $_GET[$name];
+
+            return $_GET[$name];
+        }
     }
 
     // }}}

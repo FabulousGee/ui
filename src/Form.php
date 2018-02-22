@@ -97,6 +97,7 @@ class Form extends View //implements \ArrayAccess - temporarily so that our buil
 
         // Layout needs to have a save button
         $this->buttonSave = $this->layout->addButton(['Save', 'primary']);
+        $this->buttonSave->setElement('button');
         $this->buttonSave->on('click', $this->js()->form('submit'));
     }
 
@@ -288,12 +289,18 @@ class Form extends View //implements \ArrayAccess - temporarily so that our buil
             throw new Exception(['Argument 1 for decoratorFactory must be \atk4\data\Field or null', 'f' => $f]);
         }
 
-        $fallback_seed = 'Line';
+        $fallback_seed = ['Line'];
 
         if ($f->enum) {
             $fallback_seed = ['DropDown', 'values' => array_combine($f->enum, $f->enum)];
+        } elseif ($f->values) {
+            $fallback_seed = ['DropDown', 'values' => $f->values];
         } elseif (isset($f->reference)) {
             $fallback_seed = ['DropDown', 'model' => $f->reference->refModel()];
+        }
+
+        if (isset($f->ui['hint'])) {
+            $fallback_seed['hint'] = $f->ui['hint'];
         }
 
         $seed = $this->mergeSeeds(
@@ -364,22 +371,21 @@ class Form extends View //implements \ArrayAccess - temporarily so that our buil
      */
     public function ajaxSubmit()
     {
-        $this->_add($cb = new jsCallback(), ['desired_name' => 'submit', 'POST_trigger' => true]);
+        $this->_add($cb = new jsCallback(), ['desired_name' => 'submit', 'postTrigger' => true]);
 
         $this->add(new View(['element' => 'input']))
-            ->setAttr('name', $cb->name)
+            ->setAttr('name', $cb->postTrigger)
             ->setAttr('value', 'submit')
             ->setStyle(['display' => 'none']);
 
         $cb->set(function () {
-            $caught = function ($e) {
-                return new jsExpression('$([html]).modal("show")', [
-                    'html' => '<div class="ui fullscreen modal"> <i class="close icon"></i> <div class="header"> '.
-                    htmlspecialchars(get_class($e)).
-                    ' </div> <div class="content"> '.
-                    ($e instanceof \atk4\core\Exception ? $e->getHTML() : nl2br(htmlspecialchars($e->getMessage())))
-                    .' </div> </div>',
-                ]);
+            $caught = function ($e, $useWindow) {
+                $html = '<div class="header"> '.
+                        htmlspecialchars(get_class($e)).
+                        ' </div> <div class="content"> '.
+                        ($e instanceof \atk4\core\Exception ? $e->getHTML() : nl2br(htmlspecialchars($e->getMessage()))).
+                        ' </div>';
+                $this->app->terminate(json_encode(['success' => false, 'message' => $html, 'useWindow' => $useWindow]));
             };
 
             try {
@@ -414,9 +420,9 @@ class Form extends View //implements \ArrayAccess - temporarily so that our buil
 
                 return $response;
             } catch (\Error $e) {
-                return $caught($e);
+                return $caught($e, false);
             } catch (\Exception $e) {
-                return $caught($e);
+                return $caught($e, true);
             }
 
             return $response;

@@ -34,7 +34,14 @@ class DemoTest extends \atk4\core\PHPUnit_AgileTestCase
     public function testDemo($page)
     {
         $this->expectOutputRegex($this->regex);
-        $this->inc($page)->run();
+
+        try {
+            $this->inc($page)->run();
+        } catch (\atk4\core\Exception $e) {
+            $e->addMoreInfo('test', $page);
+
+            throw $e;
+        }
     }
 
     public function demoList()
@@ -42,9 +49,10 @@ class DemoTest extends \atk4\core\PHPUnit_AgileTestCase
         $copy_paste = trim('
   autocomplete.php
   button.php
-  button2.php
+  js.php
   checkbox.php
   columns.php
+  console.php
   crud.php
   crud2.php
   field.php
@@ -60,6 +68,7 @@ class DemoTest extends \atk4\core\PHPUnit_AgileTestCase
   init.php
   label.php
   layouts.php
+  lister.php
   loader.php
   loader2.php
   menu.php
@@ -77,6 +86,7 @@ class DemoTest extends \atk4\core\PHPUnit_AgileTestCase
   tabs.php
   view.php
   virtual.php
+  wizard.php
 ');
         $copy_paste = explode("\n", $copy_paste);
         $copy_paste = array_map(function ($i) {
@@ -84,37 +94,6 @@ class DemoTest extends \atk4\core\PHPUnit_AgileTestCase
         }, $copy_paste);
 
         return $copy_paste;
-        var_dump($copy_paste);
-
-        return [
-            ['autocomplete.php'],
-            ['button.php'],
-            ['button2.php'],
-            ['checkbox.php'],
-
-            ['table.php'],
-            ['form.php'],
-            ['form2.php'],
-            ['multitable.php'],
-            ['grid.php'],
-            ['crud.php'],
-            ['crud2.php'],
-
-            ['view.php'],
-            ['field.php'],
-            ['message.php'],
-            ['header.php'],
-            ['label.php'],
-            ['menu.php'],
-            ['tabs.php'],
-            ['paginator.php'],
-
-            ['reloading.php'],
-            ['modal.php'],
-            ['sticky.php'],
-            ['recursive.php'],
-            ['notify.php'],
-        ];
     }
 
     public function testLayout()

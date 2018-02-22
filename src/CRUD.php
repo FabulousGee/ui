@@ -43,12 +43,12 @@ class CRUD extends Grid
         }
 
         if ($this->can('u')) {
-            $this->pageEdit = $this->add($this->pageEdit ?: 'VirtualPage');
+            $this->pageEdit = $this->add([$this->pageEdit ?: 'VirtualPage', 'short_name'=>'edit']);
             $this->formEdit = $this->pageEdit->add($this->formEdit ?: ['Form', 'layout' => 'FormLayout/Columns']);
         }
 
         if ($this->can('c')) {
-            $this->pageCreate = $this->add($this->pageCreate ?: 'VirtualPage');
+            $this->pageCreate = $this->add([$this->pageCreate ?: 'VirtualPage', 'short_name'=>'add']);
 
             $this->itemCreate = $this->menu->addItem(
                 $this->itemCreate ?: ['Add new', 'icon' => 'plus'],
@@ -75,8 +75,10 @@ class CRUD extends Grid
             $this->fieldsDefault = $defaultFields;
         }
 
+        $m = parent::setModel($m, $this->fieldsGrid ?: $this->fieldsDefault);
+
         if ($this->can('c')) {
-            $this->itemCreate->set('Add New '.(isset($m->title) ? $m->title : get_class($m)));
+            $this->itemCreate->set('Add New '.(isset($m->title) ? $m->title : preg_replace('|.*\\\|', '', get_class($m))));
 
             $this->pageCreate->set(function ($page) use ($m) {
                 $form = $page->add($this->formCreate ?: ['Form', 'layout' => 'FormLayout/Columns']);
@@ -92,8 +94,6 @@ class CRUD extends Grid
                 });
             });
         }
-
-        $m = parent::setModel($m, $this->fieldsGrid ?: $this->fieldsDefault);
 
         if ($this->can('u')) {
             $this->addAction(['icon' => 'edit'], new jsModal('Edit', $this->pageEdit, [$this->name => $this->jsRow()->data('id')]));
@@ -118,7 +118,7 @@ class CRUD extends Grid
                 $this->model->load($id)->delete();
 
                 return $j->closest('tr')->transition('fade left');
-            });
+            }, 'Are you sure?');
         }
 
         return $m;

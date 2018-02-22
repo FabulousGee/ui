@@ -6,8 +6,6 @@ namespace atk4\ui;
 
 class Table extends Lister
 {
-    use \atk4\core\HookTrait;
-
     // Overrides
     public $defaultTemplate = 'table.html';
     public $ui = 'table';
@@ -69,28 +67,28 @@ class Table extends Lister
      *
      * @var Template
      */
-    protected $t_head;
+    public $t_head;
 
     /**
      * Contain the template for the "Body" type row.
      *
      * @var Template
      */
-    protected $t_row;
+    public $t_row;
 
     /**
      * Contain the template for the "Foot" type row.
      *
      * @var Template
      */
-    protected $t_totals;
+    public $t_totals;
 
     /**
      * Contains the output to show if table contains no rows.
      *
      * @var Template
      */
-    protected $t_empty;
+    public $t_empty;
 
     public $sortable = null;
 
@@ -178,42 +176,6 @@ class Table extends Lister
             throw new Exception(['Value of $columnDecorator argument is incorrect', 'columnDecorator' => $columnDecorator]);
         }
 
-        /*
-        $field = null;
-        if (is_string($name)) {
-            $field = $this->model->hasElement($name);
-        }
-
-        // No such field or not a string, so use it as columnDef
-        if (!$field && !$columnDef) {
-            $columnDef = $name;
-            $name = null;
-        }
-
-        // At this point $columnDef is surely there and we might have field also.
-        if ($columnDef === null) {
-            $columnDef = $this->_columnFactory($field);
-        } elseif (is_string($columnDef) || is_array($columnDef)) {
-            if (!$this->app) {
-                throw new Exception(['You can only specify column type by name if Table is in a render-tree']);
-            }
-
-            $columnDef = $this->factory($columnDef);
-        }
-
-        $columnDef->table = $this;
-        if (isset($columnDef->_initializerTrait) && !$columnDef->_initialized) {
-            $this->_add($columnDef);
-        }
-
-        if (!$columnDef instanceof TableColumn\Generic) {
-            throw new Exception([
-                'Table columns must extend TableColumn\Generic',
-                'column'=> $columnDef,
-            ]);
-        }
-         */
-
         if (is_null($name)) {
             $this->columns[] = $columnDecorator;
         } elseif (!is_string($name)) {
@@ -232,7 +194,7 @@ class Table extends Lister
     public function addDecorator($name, $decorator)
     {
         if (!$this->columns[$name]) {
-            throw new Exceptino(['No such column, cannot decorate', 'name' => $name]);
+            throw new Exception(['No such column, cannot decorate', 'name' => $name]);
         }
         $decorator = $this->_add($this->factory($decorator, ['table' => $this], 'TableColumn'));
 
@@ -285,14 +247,12 @@ class Table extends Lister
     }
 
     /**
-     * Init method will create one column object that will be used to render
+     * initChunks method will create one column object that will be used to render
      * all columns in the table unless you have specified a different
      * column object.
      */
-    public function init()
+    public function initChunks()
     {
-        parent::init();
-
         if (!$this->t_head) {
             $this->t_head = $this->template->cloneRegion('Head');
             $this->t_row_master = $this->template->cloneRegion('Row');
@@ -372,44 +332,15 @@ class Table extends Lister
         $rows = 0;
         foreach ($this->model as $this->current_id => $tmp) {
             $this->current_row = $this->model->get();
+            if ($this->hook('beforeRow') === false) {
+                continue;
+            }
 
             if ($this->totals_plan) {
                 $this->updateTotals();
             }
 
-            $this->t_row->set($this->model);
-
-            if ($this->use_html_tags) {
-                // Prepare row-specific HTML tags.
-                $html_tags = [];
-
-                foreach ($this->hook('getHTMLTags', [$this->model]) as $ret) {
-                    if (is_array($ret)) {
-                        $html_tags = array_merge($html_tags, $ret);
-                    }
-                }
-
-                foreach ($this->columns as $name => $columns) {
-                    if (!is_array($columns)) {
-                        $columns = [$columns];
-                    }
-                    $field = $this->model->hasElement($name);
-                    foreach ($columns as $column) {
-                        if (!method_exists($column, 'getHTMLTags')) {
-                            continue;
-                        }
-                        $html_tags = array_merge($column->getHTMLTags($this->model, $field), $html_tags);
-                    }
-                }
-
-                // Render row and add to body
-                $this->t_row->setHTML($html_tags);
-                $this->t_row->set('_id', $this->model->id);
-                $this->template->appendHTML('Body', $this->t_row->render());
-                $this->t_row->del(array_keys($html_tags));
-            } else {
-                $this->template->appendHTML('Body', $this->t_row->render());
-            }
+            $this->renderRow($this->model);
 
             $rows++;
         }
@@ -424,6 +355,47 @@ class Table extends Lister
         }
 
         return View::renderView();
+    }
+
+    /**
+     * Render individual row. Override this method if you want to do more
+     * decoration.
+     */
+    public function renderRow()
+    {
+        $this->t_row->set($this->model);
+
+        if ($this->use_html_tags) {
+            // Prepare row-specific HTML tags.
+            $html_tags = [];
+
+            foreach ($this->hook('getHTMLTags', [$this->model]) as $ret) {
+                if (is_array($ret)) {
+                    $html_tags = array_merge($html_tags, $ret);
+                }
+            }
+
+            foreach ($this->columns as $name => $columns) {
+                if (!is_array($columns)) {
+                    $columns = [$columns];
+                }
+                $field = $this->model->hasElement($name);
+                foreach ($columns as $column) {
+                    if (!method_exists($column, 'getHTMLTags')) {
+                        continue;
+                    }
+                    $html_tags = array_merge($column->getHTMLTags($this->model, $field), $html_tags);
+                }
+            }
+
+            // Render row and add to body
+            $this->t_row->setHTML($html_tags);
+            $this->t_row->set('_id', $this->model->id);
+            $this->template->appendHTML('Body', $this->t_row->render());
+            $this->t_row->del(array_keys($html_tags));
+        } else {
+            $this->template->appendHTML('Body', $this->t_row->render());
+        }
     }
 
     /**
